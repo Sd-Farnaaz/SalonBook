@@ -90,6 +90,7 @@ export async function fetchApi(endpoint, options = {}) {
           throw new ApiError('Session expired. Please log in again.', 401, null);
         }
       } catch (err) {
+        if (err instanceof ApiError) throw err;
         throw new ApiError('Network error during session refresh', 0, null);
       }
     }
