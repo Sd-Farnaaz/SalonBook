@@ -126,7 +126,13 @@ export async function fetchApi(endpoint, options = {}) {
     // Auto-refresh token if 401 and we have a refresh token (only for authenticated API calls)
     if (response.status === 401 && !_retry && !skipAuth && !isPublicAuthEndpoint && localStorage.getItem('refreshToken')) {
       try {
-        const newAccessToken = await refreshAuthTokens();
+        const currentStoredToken = localStorage.getItem('accessToken');
+        let newAccessToken;
+        if (currentStoredToken && currentStoredToken !== token) {
+          newAccessToken = currentStoredToken;
+        } else {
+          newAccessToken = await refreshAuthTokens();
+        }
         const retryHeaders = {
           ...headers,
           Authorization: `Bearer ${newAccessToken}`,

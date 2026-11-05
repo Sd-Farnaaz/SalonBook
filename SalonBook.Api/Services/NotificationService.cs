@@ -10,22 +10,55 @@ public class NotificationService : INotificationService
     private readonly ApplicationDbContext _dbContext;
     private readonly IEmailService _emailService;
     private readonly IEmailTemplateBuilder _templateBuilder;
+    private readonly SalonBook.Api.Configurations.EmailOptions _emailOptions;
+    private readonly Microsoft.AspNetCore.Hosting.IWebHostEnvironment _env;
     private readonly ILogger<NotificationService> _logger;
 
     public NotificationService(
         ApplicationDbContext dbContext,
         IEmailService emailService,
         IEmailTemplateBuilder templateBuilder,
+        Microsoft.Extensions.Options.IOptions<SalonBook.Api.Configurations.EmailOptions> emailOptions,
+        Microsoft.AspNetCore.Hosting.IWebHostEnvironment env,
         ILogger<NotificationService> logger)
     {
         _dbContext = dbContext;
         _emailService = emailService;
         _templateBuilder = templateBuilder;
+        _emailOptions = emailOptions?.Value ?? new SalonBook.Api.Configurations.EmailOptions();
+        _env = env;
         _logger = logger;
     }
 
+    public static string Truncate(string? value, int maxLength) =>
+        string.IsNullOrEmpty(value) ? string.Empty : (value.Length <= maxLength ? value : value[..maxLength]);
+
+    public static string? TruncateNullable(string? value, int maxLength) =>
+        string.IsNullOrEmpty(value) ? null : (value.Length <= maxLength ? value : value[..maxLength]);
+
+    private string GetWebAppBaseUrl()
+    {
+        var configuredUrl = _emailOptions.WebAppBaseUrl?.Trim().TrimEnd('/');
+        if (!string.IsNullOrWhiteSpace(configuredUrl) &&
+            !configuredUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !configuredUrl.Contains("127.0.0.1"))
+        {
+            return configuredUrl;
+        }
+
+        if (_env.IsDevelopment())
+        {
+            return string.IsNullOrWhiteSpace(configuredUrl) ? "http://localhost:5173" : configuredUrl;
+        }
+
+        return "https://salonbook-frontend.onrender.com";
+    }
+
     private static string TruncateMessage(string? message, int maxLength = 2000) =>
-        string.IsNullOrEmpty(message) ? string.Empty : (message.Length <= maxLength ? message : message[..maxLength]);
+        Truncate(message, maxLength);
+
+
+
 
     public async Task DispatchAppointmentEventAsync(Appointment appointment, string eventType, CancellationToken cancellationToken = default)
     {
@@ -98,8 +131,8 @@ public class NotificationService : INotificationService
             AppointmentId = appt.Id,
             Type = "AppointmentCreated",
             Channel = "InApp",
-            Subject = $"Appointment Confirmed: {appt.ServiceNameAtBooking}",
-            Message = $"Your appointment for {appt.ServiceNameAtBooking} with {appt.Staff.FullName} at {appt.Salon.Name} is confirmed for {formattedDate} UTC.",
+            Subject = Truncate($"Appointment Confirmed: {appt.ServiceNameAtBooking}", 200),
+            Message = Truncate($"Your appointment for {appt.ServiceNameAtBooking} with {appt.Staff.FullName} at {appt.Salon.Name} is confirmed for {formattedDate} UTC.", 2000),
             Status = "Sent",
             SentAtUtc = DateTime.UtcNow,
             CreatedAtUtc = DateTime.UtcNow
@@ -121,12 +154,12 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = "AppointmentCreated",
                 Channel = "Email",
-                Subject = template.Subject,
+                Subject = Truncate(template.Subject, 200),
                 Message = TruncateMessage(template.PlainTextBody),
                 Status = emailResult.Success ? "Sent" : (emailResult.Skipped ? "Skipped" : "Failed"),
                 SentAtUtc = emailResult.Success ? DateTime.UtcNow : null,
-                ErrorMessage = emailResult.ErrorMessage,
-                LastErrorCode = emailResult.ErrorCode,
+                ErrorMessage = TruncateNullable(emailResult.ErrorMessage, 1000),
+                LastErrorCode = TruncateNullable(emailResult.ErrorCode, 50),
                 CreatedAtUtc = DateTime.UtcNow
             };
             _dbContext.Notifications.Add(customerEmail);
@@ -142,7 +175,7 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = "AppointmentCreated",
                 Channel = "InApp",
-                Subject = $"New Booking: {appt.Customer.FullName} - {appt.ServiceNameAtBooking}",
+                Subject = Truncate($"New Booking: {appt.Customer.FullName} - {appt.ServiceNameAtBooking}", 200),
                 Message = $"{appt.Customer.FullName} booked {appt.ServiceNameAtBooking} with {appt.Staff.FullName} for {formattedDate} UTC.",
                 Status = "Sent",
                 SentAtUtc = DateTime.UtcNow,
@@ -164,12 +197,12 @@ public class NotificationService : INotificationService
                     AppointmentId = appt.Id,
                     Type = "AppointmentCreated",
                     Channel = "Email",
-                    Subject = adminTemplate.Subject,
+                    Subject = Truncate(adminTemplate.Subject, 200),
                     Message = TruncateMessage(adminTemplate.PlainTextBody),
                     Status = adminEmailResult.Success ? "Sent" : (adminEmailResult.Skipped ? "Skipped" : "Failed"),
                     SentAtUtc = adminEmailResult.Success ? DateTime.UtcNow : null,
-                    ErrorMessage = adminEmailResult.ErrorMessage,
-                    LastErrorCode = adminEmailResult.ErrorCode,
+                    ErrorMessage = TruncateNullable(adminEmailResult.ErrorMessage, 1000),
+                    LastErrorCode = TruncateNullable(adminEmailResult.ErrorCode, 50),
                     CreatedAtUtc = DateTime.UtcNow
                 };
                 _dbContext.Notifications.Add(adminEmail);
@@ -226,7 +259,7 @@ public class NotificationService : INotificationService
             AppointmentId = appt.Id,
             Type = "AppointmentCancelled",
             Channel = "InApp",
-            Subject = $"Appointment Cancelled: {appt.ServiceNameAtBooking}",
+            Subject = Truncate($"Appointment Cancelled: {appt.ServiceNameAtBooking}", 200),
             Message = $"Your appointment for {appt.ServiceNameAtBooking} at {appt.Salon.Name} on {appt.StartAtUtc:yyyy-MM-dd HH:mm} UTC has been cancelled. Reason: {reason}",
             Status = "Sent",
             SentAtUtc = DateTime.UtcNow,
@@ -246,12 +279,12 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = "AppointmentCancelled",
                 Channel = "Email",
-                Subject = cancelTemplate.Subject,
+                Subject = Truncate(cancelTemplate.Subject, 200),
                 Message = TruncateMessage(cancelTemplate.PlainTextBody),
                 Status = emailResult.Success ? "Sent" : (emailResult.Skipped ? "Skipped" : "Failed"),
                 SentAtUtc = emailResult.Success ? DateTime.UtcNow : null,
-                ErrorMessage = emailResult.ErrorMessage,
-                LastErrorCode = emailResult.ErrorCode,
+                ErrorMessage = TruncateNullable(emailResult.ErrorMessage, 1000),
+                LastErrorCode = TruncateNullable(emailResult.ErrorCode, 50),
                 CreatedAtUtc = DateTime.UtcNow
             });
         }
@@ -266,7 +299,7 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = "AppointmentCancelled",
                 Channel = "InApp",
-                Subject = $"Appointment Cancelled: {appt.Customer.FullName} - {appt.ServiceNameAtBooking}",
+                Subject = Truncate($"Appointment Cancelled: {appt.Customer.FullName} - {appt.ServiceNameAtBooking}", 200),
                 Message = $"Appointment #{appt.Id} for {appt.Customer.FullName} with {appt.Staff.FullName} was cancelled. Reason: {reason}",
                 Status = "Sent",
                 SentAtUtc = DateTime.UtcNow,
@@ -285,12 +318,12 @@ public class NotificationService : INotificationService
                     AppointmentId = appt.Id,
                     Type = "AppointmentCancelled",
                     Channel = "Email",
-                    Subject = adminCancelTemplate.Subject,
+                    Subject = Truncate(adminCancelTemplate.Subject, 200),
                     Message = TruncateMessage(adminCancelTemplate.PlainTextBody),
                     Status = adminEmailResult.Success ? "Sent" : (adminEmailResult.Skipped ? "Skipped" : "Failed"),
                     SentAtUtc = adminEmailResult.Success ? DateTime.UtcNow : null,
-                    ErrorMessage = adminEmailResult.ErrorMessage,
-                    LastErrorCode = adminEmailResult.ErrorCode,
+                    ErrorMessage = TruncateNullable(adminEmailResult.ErrorMessage, 1000),
+                    LastErrorCode = TruncateNullable(adminEmailResult.ErrorCode, 50),
                     CreatedAtUtc = DateTime.UtcNow
                 });
             }
@@ -321,7 +354,7 @@ public class NotificationService : INotificationService
             AppointmentId = appt.Id,
             Type = "AppointmentRescheduled",
             Channel = "InApp",
-            Subject = $"Appointment Rescheduled: {appt.ServiceNameAtBooking}",
+            Subject = Truncate($"Appointment Rescheduled: {appt.ServiceNameAtBooking}", 200),
             Message = $"Your appointment for {appt.ServiceNameAtBooking} at {appt.Salon.Name} has been rescheduled to {formattedDate} UTC.",
             Status = "Sent",
             SentAtUtc = DateTime.UtcNow,
@@ -341,12 +374,12 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = "AppointmentRescheduled",
                 Channel = "Email",
-                Subject = reschedTemplate.Subject,
+                Subject = Truncate(reschedTemplate.Subject, 200),
                 Message = TruncateMessage(reschedTemplate.PlainTextBody),
                 Status = emailResult.Success ? "Sent" : (emailResult.Skipped ? "Skipped" : "Failed"),
                 SentAtUtc = emailResult.Success ? DateTime.UtcNow : null,
-                ErrorMessage = emailResult.ErrorMessage,
-                LastErrorCode = emailResult.ErrorCode,
+                ErrorMessage = TruncateNullable(emailResult.ErrorMessage, 1000),
+                LastErrorCode = TruncateNullable(emailResult.ErrorCode, 50),
                 CreatedAtUtc = DateTime.UtcNow
             });
         }
@@ -361,7 +394,7 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = "AppointmentRescheduled",
                 Channel = "InApp",
-                Subject = $"Appointment Rescheduled: {appt.Customer.FullName} - {appt.ServiceNameAtBooking}",
+                Subject = Truncate($"Appointment Rescheduled: {appt.Customer.FullName} - {appt.ServiceNameAtBooking}", 200),
                 Message = $"Appointment #{appt.Id} for {appt.Customer.FullName} ({appt.ServiceNameAtBooking}) was rescheduled to {formattedDate} UTC.",
                 Status = "Sent",
                 SentAtUtc = DateTime.UtcNow,
@@ -380,12 +413,12 @@ public class NotificationService : INotificationService
                     AppointmentId = appt.Id,
                     Type = "AppointmentRescheduled",
                     Channel = "Email",
-                    Subject = adminReschedTemplate.Subject,
+                    Subject = Truncate(adminReschedTemplate.Subject, 200),
                     Message = TruncateMessage(adminReschedTemplate.PlainTextBody),
                     Status = adminEmailResult.Success ? "Sent" : (adminEmailResult.Skipped ? "Skipped" : "Failed"),
                     SentAtUtc = adminEmailResult.Success ? DateTime.UtcNow : null,
-                    ErrorMessage = adminEmailResult.ErrorMessage,
-                    LastErrorCode = adminEmailResult.ErrorCode,
+                    ErrorMessage = TruncateNullable(adminEmailResult.ErrorMessage, 1000),
+                    LastErrorCode = TruncateNullable(adminEmailResult.ErrorCode, 50),
                     CreatedAtUtc = DateTime.UtcNow
                 });
             }
@@ -424,7 +457,7 @@ public class NotificationService : INotificationService
             AppointmentId = appt.Id,
             Type = eventType,
             Channel = "InApp",
-            Subject = $"Appointment Update: {appt.ServiceNameAtBooking}",
+            Subject = Truncate($"Appointment Update: {appt.ServiceNameAtBooking}", 200),
             Message = $"Your appointment for {appt.ServiceNameAtBooking} at {appt.Salon.Name} status has been updated to '{appt.Status}'.",
             Status = "Sent",
             SentAtUtc = DateTime.UtcNow,
@@ -462,7 +495,7 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = "PaymentProofSubmitted",
                 Channel = "InApp",
-                Subject = $"Payment Proof: {appt.Customer.FullName} (#{appt.Id})",
+                Subject = Truncate($"Payment Proof: {appt.Customer.FullName} (#{appt.Id})", 200),
                 Message = $"{appt.Customer.FullName} submitted {method} payment proof (Ref: {txnRef}, {appt.AmountPaid} {currency}) for appointment #{appt.Id} ({appt.ServiceNameAtBooking}). Please verify.",
                 Status = "Sent",
                 SentAtUtc = DateTime.UtcNow,
@@ -482,12 +515,12 @@ public class NotificationService : INotificationService
                     AppointmentId = appt.Id,
                     Type = "PaymentProofSubmitted",
                     Channel = "Email",
-                    Subject = proofTemplate.Subject,
+                    Subject = Truncate(proofTemplate.Subject, 200),
                     Message = TruncateMessage(proofTemplate.PlainTextBody),
                     Status = emailResult.Success ? "Sent" : (emailResult.Skipped ? "Skipped" : "Failed"),
                     SentAtUtc = emailResult.Success ? DateTime.UtcNow : null,
-                    ErrorMessage = emailResult.ErrorMessage,
-                    LastErrorCode = emailResult.ErrorCode,
+                    ErrorMessage = TruncateNullable(emailResult.ErrorMessage, 1000),
+                    LastErrorCode = TruncateNullable(emailResult.ErrorCode, 50),
                     CreatedAtUtc = DateTime.UtcNow
                 });
             }
@@ -532,7 +565,7 @@ public class NotificationService : INotificationService
             AppointmentId = appt.Id,
             Type = eventType,
             Channel = "InApp",
-            Subject = subject,
+            Subject = Truncate(subject, 200),
             Message = message,
             Status = "Sent",
             SentAtUtc = DateTime.UtcNow,
@@ -552,12 +585,12 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = eventType,
                 Channel = "Email",
-                Subject = paymentTemplate.Subject,
+                Subject = Truncate(paymentTemplate.Subject, 200),
                 Message = TruncateMessage(paymentTemplate.PlainTextBody),
                 Status = emailResult.Success ? "Sent" : (emailResult.Skipped ? "Skipped" : "Failed"),
                 SentAtUtc = emailResult.Success ? DateTime.UtcNow : null,
-                ErrorMessage = emailResult.ErrorMessage,
-                LastErrorCode = emailResult.ErrorCode,
+                ErrorMessage = TruncateNullable(emailResult.ErrorMessage, 1000),
+                LastErrorCode = TruncateNullable(emailResult.ErrorCode, 50),
                 CreatedAtUtc = DateTime.UtcNow
             });
         }
@@ -606,7 +639,7 @@ public class NotificationService : INotificationService
             reminderNotificationType = "AppointmentReminder24H";
             inAppSubject = $"Reminder: Upcoming Appointment Tomorrow ({appt.Salon.Name})";
             inAppMessage = $"Your appointment for {appt.ServiceNameAtBooking} with {appt.Staff.FullName} is tomorrow at {appt.StartAtUtc:yyyy-MM-dd HH:mm} UTC. Address: {salonAddress}";
-            whatsappSmsMessage = $"👋 Hi {appt.Customer.FullName}! Reminder: Your appointment for {appt.ServiceNameAtBooking} with {appt.Staff.FullName} at {appt.Salon.Name} is tomorrow at {appt.StartAtUtc:HH:mm} UTC.\n📍 Address: {salonAddress} (Map: {mapLink})\n✅ Tap to confirm attendance: https://salonbook.local/my-bookings?confirm={appt.Id}";
+            whatsappSmsMessage = $"👋 Hi {appt.Customer.FullName}! Reminder: Your appointment for {appt.ServiceNameAtBooking} with {appt.Staff.FullName} at {appt.Salon.Name} is tomorrow at {appt.StartAtUtc:HH:mm} UTC.\n📍 Address: {salonAddress} (Map: {mapLink})\n✅ Tap to confirm attendance: {GetWebAppBaseUrl()}/my-bookings?confirm={appt.Id}";
         }
         else if (reminder.ReminderType == "2Hours")
         {
@@ -620,7 +653,7 @@ public class NotificationService : INotificationService
             reminderNotificationType = "PostVisitThankYou";
             inAppSubject = $"Thank you for visiting {appt.Salon.Name}! ⭐️ Leave a Review";
             inAppMessage = $"Thank you for choosing {appt.Salon.Name} today for your {appt.ServiceNameAtBooking}! We would love your feedback.";
-            whatsappSmsMessage = $"✨ Thank you for visiting {appt.Salon.Name} today, {appt.Customer.FullName}! We hope you loved your {appt.ServiceNameAtBooking} with {appt.Staff.FullName}.\n⭐️ Tap here to leave a 1-tap review: https://salonbook.local/salons/{appt.Salon.Slug}?review=true\nHave a wonderful day!";
+            whatsappSmsMessage = $"✨ Thank you for visiting {appt.Salon.Name} today, {appt.Customer.FullName}! We hope you loved your {appt.ServiceNameAtBooking} with {appt.Staff.FullName}.\n⭐️ Tap here to leave a 1-tap review: {GetWebAppBaseUrl()}/salons/{appt.Salon.Slug}?review=true\nHave a wonderful day!";
         }
 
         // 1. InApp Notification
@@ -631,8 +664,8 @@ public class NotificationService : INotificationService
             AppointmentId = appt.Id,
             Type = reminderNotificationType,
             Channel = "InApp",
-            Subject = inAppSubject,
-            Message = inAppMessage,
+            Subject = Truncate(inAppSubject, 200),
+            Message = Truncate(inAppMessage, 2000),
             Status = "Sent",
             SentAtUtc = DateTime.UtcNow,
             CreatedAtUtc = DateTime.UtcNow
@@ -646,8 +679,8 @@ public class NotificationService : INotificationService
             AppointmentId = appt.Id,
             Type = reminderNotificationType,
             Channel = "WhatsApp",
-            Subject = inAppSubject,
-            Message = whatsappSmsMessage,
+            Subject = Truncate(inAppSubject, 200),
+            Message = Truncate(whatsappSmsMessage, 2000),
             Status = "Sent",
             SentAtUtc = DateTime.UtcNow,
             CreatedAtUtc = DateTime.UtcNow
@@ -661,8 +694,8 @@ public class NotificationService : INotificationService
             AppointmentId = appt.Id,
             Type = reminderNotificationType,
             Channel = "SMS",
-            Subject = inAppSubject,
-            Message = whatsappSmsMessage,
+            Subject = Truncate(inAppSubject, 200),
+            Message = Truncate(whatsappSmsMessage, 2000),
             Status = "Sent",
             SentAtUtc = DateTime.UtcNow,
             CreatedAtUtc = DateTime.UtcNow
@@ -684,12 +717,12 @@ public class NotificationService : INotificationService
                 AppointmentId = appt.Id,
                 Type = reminderNotificationType,
                 Channel = "Email",
-                Subject = reminderTemplate.Subject,
+                Subject = Truncate(reminderTemplate.Subject, 200),
                 Message = TruncateMessage(reminderTemplate.PlainTextBody),
                 Status = emailResult.Success ? "Sent" : (emailResult.Skipped ? "Skipped" : "Failed"),
                 SentAtUtc = emailResult.Success ? DateTime.UtcNow : null,
-                ErrorMessage = emailResult.ErrorMessage,
-                LastErrorCode = emailResult.ErrorCode,
+                ErrorMessage = TruncateNullable(emailResult.ErrorMessage, 1000),
+                LastErrorCode = TruncateNullable(emailResult.ErrorCode, 50),
                 CreatedAtUtc = DateTime.UtcNow
             });
         }

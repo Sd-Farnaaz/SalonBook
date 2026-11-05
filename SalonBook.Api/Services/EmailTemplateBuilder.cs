@@ -55,7 +55,7 @@ public class EmailTemplateBuilder : IEmailTemplateBuilder
                 configuredUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
                 configuredUrl.Contains("127.0.0.1"))
             {
-                return null;
+                return "https://salonbook-frontend.onrender.com";
             }
 
             return configuredUrl;

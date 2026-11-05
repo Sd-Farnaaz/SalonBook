@@ -16,19 +16,46 @@ public class AdminAutomationController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly ICurrentUserService _currentUserService;
+    private readonly SalonBook.Api.Configurations.EmailOptions _emailOptions;
+    private readonly Microsoft.AspNetCore.Hosting.IWebHostEnvironment _env;
     private readonly ILogger<AdminAutomationController> _logger;
 
     public AdminAutomationController(
         ApplicationDbContext dbContext,
         ICurrentUserService currentUserService,
+        Microsoft.Extensions.Options.IOptions<SalonBook.Api.Configurations.EmailOptions> emailOptions,
+        Microsoft.AspNetCore.Hosting.IWebHostEnvironment env,
         ILogger<AdminAutomationController> logger)
     {
         _dbContext = dbContext;
         _currentUserService = currentUserService;
+        _emailOptions = emailOptions?.Value ?? new SalonBook.Api.Configurations.EmailOptions();
+        _env = env;
         _logger = logger;
     }
 
     /// <summary>
+    private string GetWebAppBaseUrl()
+    {
+        var configuredUrl = _emailOptions.WebAppBaseUrl?.Trim().TrimEnd('/');
+        if (!string.IsNullOrWhiteSpace(configuredUrl) &&
+            !configuredUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) &&
+            !configuredUrl.Contains("127.0.0.1"))
+        {
+            return configuredUrl;
+        }
+
+        if (_env.IsDevelopment())
+        {
+            return string.IsNullOrWhiteSpace(configuredUrl) ? "http://localhost:5173" : configuredUrl;
+        }
+
+        return "https://salonbook-frontend.onrender.com";
+    }
+
+    private static string Truncate(string? value, int maxLength) =>
+        string.IsNullOrEmpty(value) ? string.Empty : (value.Length <= maxLength ? value : value[..maxLength]);
+
     /// Live Automated WhatsApp, SMS, and Email delivery log feed.
     /// </summary>
     [HttpGet("reminders/logs")]
@@ -166,7 +193,7 @@ public class AdminAutomationController : ControllerBase
 
         foreach (var customer in customers)
         {
-            var defaultMsg = $"❤️ We miss you at {salon.Name}, {customer.FullName}! It's been a while since your last visit. Treat yourself with {discPct:0}% off your next booking using code '{coupon}'.\n✨ Book online: https://salonbook.local/salons/{salon.Slug}\nSee you soon!";
+            var defaultMsg = $"❤️ We miss you at {salon.Name}, {customer.FullName}! It's been a while since your last visit. Treat yourself with {discPct:0}% off your next booking using code '{coupon}'.\n✨ Book online: {GetWebAppBaseUrl()}/salons/{salon.Slug}\nSee you soon!";
             var msgText = string.IsNullOrWhiteSpace(request.CustomMessage) ? defaultMsg : request.CustomMessage.Replace("{CustomerName}", customer.FullName).Replace("{SalonName}", salon.Name).Replace("{Coupon}", coupon);
 
             var notification = new Notification
@@ -175,8 +202,8 @@ public class AdminAutomationController : ControllerBase
                 SalonId = salonId.Value,
                 Type = "ReEngagement6Weeks",
                 Channel = channel,
-                Subject = $"❤️ We Miss You at {salon.Name}! Here's {discPct:0}% Off",
-                Message = msgText,
+                Subject = Truncate($"❤️ We Miss You at {salon.Name}! Here's {discPct:0}% Off", 200),
+                Message = Truncate(msgText, 2000),
                 Status = "Sent",
                 SentAtUtc = DateTime.UtcNow,
                 CreatedAtUtc = DateTime.UtcNow

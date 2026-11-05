@@ -27,8 +27,17 @@ export function AuthProvider({ children }) {
     const handleSessionExpired = () => {
       setUser(null);
     };
+    const handleStorageChange = (e) => {
+      if ((e.key === 'accessToken' || e.key === 'userRole') && !e.newValue) {
+        setUser(null);
+      }
+    };
     window.addEventListener('session-expired', handleSessionExpired);
-    return () => window.removeEventListener('session-expired', handleSessionExpired);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('session-expired', handleSessionExpired);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const login = (authResponse) => {
