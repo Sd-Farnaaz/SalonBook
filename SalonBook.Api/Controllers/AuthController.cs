@@ -452,7 +452,7 @@ public class AuthController : ControllerBase
             _logger.LogInformation("Password reset token generated for user {Email}", normalizedEmail);
 
             // In Development mode, expose the token in the response for test verification
-            if (_env.IsDevelopment())
+            if (_env.IsDevelopment() || _env.IsEnvironment("Testing"))
             {
                 devToken = rawToken;
             }

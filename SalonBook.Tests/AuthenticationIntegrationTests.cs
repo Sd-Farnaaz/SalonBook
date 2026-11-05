@@ -10,14 +10,6 @@ using SalonBook.Api.Services;
 
 namespace SalonBook.Tests;
 
-public class CustomWebApplicationFactory : WebApplicationFactory<Program>
-{
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.UseEnvironment("Development");
-    }
-}
-
 public class AuthenticationIntegrationTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -315,4 +307,3 @@ public class AuthenticationIntegrationTests : IClassFixture<CustomWebApplication
         Assert.Equal(HttpStatusCode.OK, newLogin.StatusCode);
     }
 }
-
